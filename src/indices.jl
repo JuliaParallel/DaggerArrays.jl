@@ -1,4 +1,4 @@
-import Base: ndims, size, getindex
+import Base: ndims, size, getindex, length, isempty
 
 ###### Array Domains ######
 
@@ -13,21 +13,8 @@ indexes(a::ArrayDomain) = a.indexes
 chunks(a::ArrayDomain{N}) where {N} = IndexBlocks(
     ntuple(i->first(indexes(a)[i]), Val(N)), map(x->[length(x)], indexes(a)))
 
-(==)(a::ArrayDomain, b::ArrayDomain) = indexes(a) == indexes(b)
+Base.:(==)(a::ArrayDomain, b::ArrayDomain) = indexes(a) == indexes(b)
 Base.getindex(arr::AbstractArray, d::ArrayDomain) = arr[indexes(d)...]
-
-function intersect(a::ArrayDomain, b::ArrayDomain)
-    if a === b
-        return a
-    end
-    ArrayDomain(map((x, y) -> _intersect(x, y), indexes(a), indexes(b)))
-end
-
-function project(a::ArrayDomain, b::ArrayDomain)
-    map(indexes(a), indexes(b)) do p, q
-        q .- (first(p) - 1)
-    end |> ArrayDomain
-end
 
 function getindex(a::ArrayDomain, b::ArrayDomain)
     ArrayDomain(map(getindex, indexes(a), indexes(b)))
@@ -134,19 +121,29 @@ function Base.cat(x::IndexBlocks, y::IndexBlocks; dims::Int)
     IndexBlocks(x.start, (output...,))
 end
 
-Base.hcat(xs::IndexBlocks...) = cat(xs..., dims=2)
-Base.vcat(xs::IndexBlocks...) = cat(xs..., dims=1)
+### Lookup parts ###
 
-function reduce(xs::IndexBlocks; dims)
-    if dims isa Int
-        IndexBlocks(xs.start,
-                     setindex(xs.cumlength, dims, [1]))
-    else
-        reduce((a,d)->reduce(a,dims=d), dims, init=xs)
-    end
+function project(a::ArrayDomain, b::ArrayDomain)
+    map(indexes(a), indexes(b)) do p, q
+        q .- (first(p) - 1)
+    end |> ArrayDomain
 end
 
-cumulative_indicess(x::IndexBlocks) = x
+_cumsum(x::AbstractArray) = length(x) == 0 ? Int[] : cumsum(x)
+function lookup_parts(ps::AbstractArray, subdmns::IndexBlocks{N}, d::ArrayDomain{N}) where N
+    groups = map(group_indices, subdmns.cumlength, indexes(d))
+    sz = map(length, groups)
+    pieces = Array{Union{Chunk,Thunk}}(undef, sz)
+    for i = CartesianIndices(sz)
+        idx_and_dmn = map(getindex, groups, i.I)
+        idx = map(x->x[1], idx_and_dmn)
+        dmn = ArrayDomain(map(x->x[2], idx_and_dmn))
+        pieces[i] = delayed(getindex)(ps[idx...], project(subdmns[idx...], dmn))
+    end
+    out_cumlength = map(g->_cumsum(map(x->length(x[2]), g)), groups)
+    out_dmn = IndexBlocks(ntuple(x->1,Val(N)), out_cumlength)
+    pieces, out_dmn
+end
 
 function group_indices(cumlength, idxs,at=1, acc=Any[])
     at > length(idxs) && return acc
@@ -180,6 +177,8 @@ function group_indices(cumlength, idxs::AbstractRange)
     map(=>, f:l, map(UnitRange, vcat(first(idxs), out[1:end-1].+1), out))
 end
 
+##### Partitioning #####
+
 struct Blocks{N}
     blocksize::NTuple{N, Int}
 end
@@ -193,7 +192,7 @@ function _cumlength(len, step)
     cumsum(extra > 0 ? vcat(ps, extra) : ps)
 end
 
-function partition(p::Blocks, dom::ArrayDomain)
+function partition(dom::ArrayDomain, p::Blocks)
     IndexBlocks(map(first, indexes(dom)),
         map(_cumlength, map(length, indexes(dom)), p.blocksize))
 end

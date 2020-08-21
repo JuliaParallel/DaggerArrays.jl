@@ -15,6 +15,7 @@ include("util.jl")
 export Blocks, ArrayDomain
 include("indices.jl")
 
+import Base.collect
 export DArray, distribute
 include("darray.jl")
 

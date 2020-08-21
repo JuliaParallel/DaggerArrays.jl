@@ -23,6 +23,18 @@ mutable struct DArray{T,N,F} <: AbstractArray{T, N}
     end
 end
 
+function Base.show(io::IO, ::MIME"text/plain", x::DArray)
+    dims = ndims(x) == 1 ? "$(length(x))-element" : join(string.(size(x)), "×")
+    cdims = join(string.(size(chunks(x))), "×")
+    l = length(chunks(x))
+
+    print(io, "$dims DArray{$(eltype(x)), $(ndims(x))} with $cdims chunks")
+end
+
+function Base.show(io::IO, x::DArray)
+    show(io::IO, MIME("text/plain"), x)
+end
+
 function free_chunks(chunks)
     @sync for c in chunks
         if c isa Chunk{<:Any, DRef}
@@ -65,31 +77,6 @@ function collect(ctx::Context, d::DArray; tree=false, options=nothing)
     else
         treereduce_nd(dimcatfuncs, asyncmap(collect, a.chunks))
     end
-end
-
-"""
-`view` of a `DArray` chunk returns a `DArray` of thunks
-"""
-function Base.view(c::DArray, d)
-    subchunks, subindices = lookup_parts(chunks(c), subindices(c), d)
-    d1 = alignfirst(d)
-    DArray(eltype(c), d1, subindices, subchunks)
-end
-
-_cumsum(x::AbstractArray) = length(x) == 0 ? Int[] : cumsum(x)
-function lookup_parts(ps::AbstractArray, subdmns::IndexBlocks{N}, d::ArrayDomain{N}) where N
-    groups = map(group_indices, subdmns.cumlength, indexes(d))
-    sz = map(length, groups)
-    pieces = Array{Union{Chunk,Thunk}}(undef, sz)
-    for i = CartesianIndices(sz)
-        idx_and_dmn = map(getindex, groups, i.I)
-        idx = map(x->x[1], idx_and_dmn)
-        dmn = ArrayDomain(map(x->x[2], idx_and_dmn))
-        pieces[i] = delayed(getindex)(ps[idx...], project(subdmns[idx...], dmn))
-    end
-    out_cumlength = map(g->_cumsum(map(x->length(x[2]), g)), groups)
-    out_dmn = IndexBlocks(ntuple(x->1,Val(N)), out_cumlength)
-    pieces, out_dmn
 end
 
 
@@ -151,19 +138,23 @@ function distribute(x::AbstractArray, subindices)
             end)(shape, chunks...)
         end
     else
-        cs = map(c -> delayed(identity)(x[c]), d.subindices)
+        cs = map(c -> delayed(identity)(x[c]), subindices)
     end
 
-    DArray(T,
+    DArray(eltype(x),
            indices(x),
            subindices,
            cs
     )
 end
 
+function distribute(x::AbstractArray, blocks::Blocks)
+    distribute(x, partition(indices(x), blocks))
+end
+
 function distribute(x::AbstractArray{T,N}, n::NTuple{N}) where {T,N}
     p = map((d, dn)->ceil(Int, d / dn), size(x), n)
-    distribute(x, Blocks(p))
+    distribute(x, partition(indices(x), Blocks(p)))
 end
 
 function distribute(x::AbstractVector, n::Int)
@@ -174,10 +165,38 @@ function distribute(x::AbstractVector, n::Vector{<:Integer})
     distribute(x, IndexBlocks((1,), (cumsum(n),)))
 end
 
-function Base.:(==)(x::DArray{T,N}, y::AbstractArray{S,N}) where {T,S,N}
-    collect(x) == y
+Base.:(==)(x::DArray, y::AbstractArray) = collect(x) == y
+
+Base.:(==)(x::AbstractArray, y::DArray) = collect(x) == y
+
+# Getindex
+
+"""
+`view` of a `DArray` chunk returns a `DArray` of thunks
+"""
+function Base.view(c::DArray, d)
+    subchunks, subinds = lookup_parts(chunks(c), subindices(c), d)
+    d1 = alignfirst(d)
+    DArray(eltype(c), d1, subinds, subchunks)
 end
 
-function Base.:(==)(x::AbstractArray{T,N}, y::DArray{S,N}) where {T,S,N}
-    return collect(x) == y
+function Base.getindex(c::DArray, idx...)
+    ranges = indices(c)
+    idx′ = [if isa(idx[i], Colon)
+        indexes(ranges)[i]
+    else
+        idx[i]
+    end for i in 1:length(idx)]
+
+    # Figure out output dimension
+    view(c, ArrayDomain(idx′))
 end
+
+function Base.getindex(x::DArray, idx::Integer...)
+    d = ArrayDomain(idx...)
+    subchunks, subinds = lookup_parts(chunks(x), subindices(x), d)
+    d1 = alignfirst(d)
+    collect(delayed(x->first(x[indexes(first(subinds))...]))(subchunks[1]))
+end
+
+Base.getindex(c::DArray, idx::ArrayDomain) = c[indexes(idx)...]
