@@ -115,18 +115,18 @@ function thunkize(ctx::Context, c::DArray; persist=true)
     end
 end
 
-function distribute(x::AbstractArray, subindices)
+function distribute(x::AbstractArray, subinds)
     if isa(x, DArray)
         # distributing a dsitributed array
-        if subindices == subindices(x)
+        if subinds == subindices(x)
             return x # already properly distributed
         end
 
         Nd = ndims(x)
         T = eltype(x)
         concat = x.concat
-        cs = map(subindices) do idx
-            chunks = cached_stage(ctx, x[idx]).chunks
+        cs = map(subinds) do idx
+            chunks = x[idx].chunks
             shape = size(chunks)
             (delayed() do shape, parts...
                 if prod(shape) == 0
@@ -138,12 +138,12 @@ function distribute(x::AbstractArray, subindices)
             end)(shape, chunks...)
         end
     else
-        cs = map(c -> delayed(identity)(x[c]), subindices)
+        cs = map(c -> delayed(identity)(x[c]), subinds)
     end
 
     DArray(eltype(x),
            indices(x),
-           subindices,
+           subinds,
            cs
     )
 end
