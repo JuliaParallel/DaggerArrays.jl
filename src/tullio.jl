@@ -47,11 +47,6 @@ bcast(f, x, y) = map(f, x, y)
 
 bcast_f(f) = (x...) -> bcast(f, x...)
 
-macro dtullio(expr...)
-    dd = Tullio._tullio(expr..., :(lowered=true))
-    MacroTools.prettify(_dtullio(dd)) |> esc
-end
-
 function _dtullio(dd)
     output_dims = first.(getindex.((dd.constraints,), dd.leftind))
 
@@ -64,7 +59,7 @@ function _dtullio(dd)
     comp = Expr(:generator, Zero(), map((x,y)->:($x = $y), dd.leftind, output_dims)...)
     domain_comprehension = Expr(:typed_comprehension, dT, comp)
 
-    subdomains = map(d -> :($d = $d.subdomains), dd.arrays)
+    subinds = map(d -> :($d = $d.subindices), dd.arrays)
 
     dright = map_calls(dd.right) do c
         Expr(:call, :make_left_subdomain, c.args[2:end]...)
@@ -98,28 +93,33 @@ function _dtullio(dd)
         let
             $(checks...)
 
-            # within this let block the array symbols refer to the subdomains
-            subdomains = let $(subdomains...), $(dd.leftarray) = $domain_comprehension
+            # within this let block the array symbols refer to the subinds
+            subinds = let $(subinds...), $(dd.leftarray) = $domain_comprehension
                 make_left_subdomain($(dd.arrays...)) = ArrayDomain($(output_dims...))
-                @tullio $subdomain_texpr threads=false
+                DaggerArrays.Tullio.@tullio $subdomain_texpr threads=false
                 $(dd.leftarray)
             end
 
             # within this let block the array symbols refer to the array of chunks
             chunks = let $(chunks...), $(dd.leftarray) = $chunk_comprehension
-                on_each = delayed(($(dd.arrays...),) -> @tullio $on_chunk_texpr)
+                on_each = delayed(($(dd.arrays...),) -> DaggerArrays.Tullio.@tullio $on_chunk_texpr)
                 delayed_redfun = $delayed_redfun
-                @tullio (delayed_redfun) $chunks_texpr threads=false
+                DaggerArrays.Tullio.@tullio (delayed_redfun) $chunks_texpr threads=false
                 $unwrap_reduce.($(dd.leftarray))
             end
 
             # Make the output DArray
             DArray(Any, # todo
                    ArrayDomain($(output_dims...)),
-            map(identity, subdomains), # tighten type
+            map(identity, subinds), # tighten type
             chunks,
             cat)
         end
     end
 end
 
+
+macro dtullio(expr...)
+    dd = Tullio._tullio(expr..., :(lowered=true))
+    _dtullio(dd) |> esc
+end
