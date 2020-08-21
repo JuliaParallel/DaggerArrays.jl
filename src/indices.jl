@@ -77,34 +77,6 @@ getindex(x::IndexBlocks, idx::Int...) = _getindex(x,idx)
 
 Base.IndexStyle(::Type{<:IndexBlocks}) = IndexCartesian()
 
-function transpose(x::IndexBlocks{2})
-    IndexBlocks(reverse(x.start), reverse(x.cumlength))
-end
-function transpose(x::IndexBlocks{1})
-    IndexBlocks((1, x.start[1]), ([1], x.cumlength[1]))
-end
-
-function Base.adjoint(x::IndexBlocks{2})
-    IndexBlocks(reverse(x.start), reverse(x.cumlength))
-end
-function Base.adjoint(x::IndexBlocks{1})
-    IndexBlocks((1, x.start[1]), ([1], x.cumlength[1]))
-end
-
-function (*)(x::IndexBlocks{2}, y::IndexBlocks{2})
-    if x.cumlength[2] != y.cumlength[1]
-        throw(DimensionMismatch("Block distributions being multiplied are not compatible"))
-    end
-    IndexBlocks((x.start[1],y.start[2]), (x.cumlength[1], y.cumlength[2]))
-end
-
-function (*)(x::IndexBlocks{2}, y::IndexBlocks{1})
-    if x.cumlength[2] != y.cumlength[1]
-        throw(DimensionMismatch("Block distributions being multiplied are not compatible"))
-    end
-    IndexBlocks((x.start[1],), (x.cumlength[1],))
-end
-
 merge_cumsums(x,y) = vcat(x, y .+ x[end])
 
 function Base.cat(x::IndexBlocks, y::IndexBlocks; dims::Int)
