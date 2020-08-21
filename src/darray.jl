@@ -64,7 +64,7 @@ subindices(d::DArray) = d.subindices
 size(x::DArray) = size(indices(x))
 stage(ctx, c::DArray) = c
 
-function collect(ctx::Context, d::DArray; tree=false, options=nothing)
+function Base.collect(ctx::Context, d::DArray; tree=false, options=nothing)
     a = compute(ctx, d; options=options)
 
     if isempty(d.chunks)
@@ -79,12 +79,13 @@ function collect(ctx::Context, d::DArray; tree=false, options=nothing)
     end
 end
 
+Base.collect(x::DArray; options=nothing) = collect(Context(), x; options=options)
 
 """
 A DArray object may contain a thunk in it, in which case
 we first turn it into a Thunk object and then compute it.
 """
-function compute(ctx::Context, x::DArray; persist=true, options=nothing)
+function Dagger.compute(ctx::Context, x::DArray; persist=true, options=nothing)
     thunk = thunkize(ctx, x, persist=persist)
     if isa(thunk, Thunk)
         compute(ctx, thunk; options=options)

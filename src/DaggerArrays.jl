@@ -1,6 +1,8 @@
 module DaggerArrays
 
-using Dagger: delayed, Thunk, Chunk, Context
+import Dagger
+using Dagger: delayed, istask, persist!, compute, Thunk, Chunk, Context
+
 using TensorOperations
 using KernelAbstractions
 using LoopVectorization
