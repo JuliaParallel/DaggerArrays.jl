@@ -32,7 +32,8 @@ ArrayDomain((1:15), (1:80))
 ```
 """
 alignfirst(a::ArrayDomain) =
-    ArrayDomain(map(r->1:length(r), indexes(a)))
+    ArrayDomain(map(r->1:length(r),
+                    filter(x->!(x isa Integer), indexes(a))))
 
 function size(a::ArrayDomain, dim)
     idxs = indexes(a)
@@ -104,16 +105,19 @@ end
 _cumsum(x::AbstractArray) = length(x) == 0 ? Int[] : cumsum(x)
 function lookup_parts(ps::AbstractArray, subdmns::IndexBlocks{N}, d::ArrayDomain{N}) where N
     groups = map(group_indices, subdmns.cumlength, indexes(d))
-    sz = map(length, groups)
+    non_removed_dims = findall(x->!(x isa Integer), indexes(d))
+    sz = (map(length, groups)[non_removed_dims]...,)
+    M = length(sz)
     pieces = Array{Union{Chunk,Thunk}}(undef, sz)
-    for i = CartesianIndices(sz)
+
+    for (i, j) = zip(CartesianIndices(map(length, groups)), 1:prod(sz))
         idx_and_dmn = map(getindex, groups, i.I)
         idx = map(x->x[1], idx_and_dmn)
         dmn = ArrayDomain(map(x->x[2], idx_and_dmn))
-        pieces[i] = delayed(getindex)(ps[idx...], project(subdmns[idx...], dmn))
+        pieces[j] = delayed(getindex)(ps[idx...], project(subdmns[idx...], dmn))
     end
-    out_cumlength = map(g->_cumsum(map(x->length(x[2]), g)), groups)
-    out_dmn = IndexBlocks(ntuple(x->1,Val(N)), out_cumlength)
+    out_cumlength = map(g->_cumsum(map(x->length(x[2]), g)), groups[non_removed_dims])
+    out_dmn = IndexBlocks(ntuple(x->1,M), out_cumlength)
     pieces, out_dmn
 end
 
@@ -137,7 +141,8 @@ function group_indices(cumlength, idxs,at=1, acc=Any[])
 end
 
 function group_indices(cumlength, idx::Int)
-    group_indices(cumlength, [idx])
+    i = searchsortedfirst(cumlength, idx)
+    [i => idx]
 end
 
 function group_indices(cumlength, idxs::AbstractRange)
