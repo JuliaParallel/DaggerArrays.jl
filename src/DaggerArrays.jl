@@ -1,6 +1,6 @@
 module DaggerArrays
 
-using Dagger: delayed, chunks, Thunk, Chunk
+using Dagger: delayed, Thunk, Chunk, Context
 using TensorOperations
 using KernelAbstractions
 using LoopVectorization
@@ -10,9 +10,12 @@ export delayed
 
 export @dtullio
 
-export DArray, Blocks, ArrayDomain
+include("util.jl")
+
+export Blocks, ArrayDomain
 include("indices.jl")
 
+export DArray, distribute
 include("darray.jl")
 
 include("tullio.jl")

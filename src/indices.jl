@@ -36,7 +36,7 @@ end
 """
     alignfirst(a) -> ArrayDomain
 
-Make a subdomain a standalone domain.
+Make a subindices a standalone indices.
 
 # Example
 ```julia-repl
@@ -58,11 +58,11 @@ isempty(a::ArrayDomain) = length(a) == 0
 
 
 """
-    domain(x::AbstractArray) -> ArrayDomain
+    indices(x::AbstractArray) -> ArrayDomain
 
-The domain of an array is an ArrayDomain.
+The indices of an array is an ArrayDomain.
 """
-domain(x::AbstractArray) = ArrayDomain([1:l for l in size(x)])
+indices(x::AbstractArray) = ArrayDomain([1:l for l in size(x)])
 
 struct IndexBlocks{N} <: AbstractArray{ArrayDomain{N}, N}
     start::NTuple{N, Int}
@@ -126,7 +126,7 @@ function Base.cat(x::IndexBlocks, y::IndexBlocks; dims::Int)
     for i=1:N
         i == dims && continue
         if get_i(x,y,i) != get_i(y,x,i)
-            throw(DimensionMismatch("Blocked domains being concatenated have different distributions along dimension $i"))
+            throw(DimensionMismatch("Blocked indicess being concatenated have different distributions along dimension $i"))
         end
     end
     output = Any[x.cumlength...]
@@ -146,4 +146,55 @@ function reduce(xs::IndexBlocks; dims)
     end
 end
 
-cumulative_domains(x::IndexBlocks) = x
+cumulative_indicess(x::IndexBlocks) = x
+
+function group_indices(cumlength, idxs,at=1, acc=Any[])
+    at > length(idxs) && return acc
+    f = idxs[at]
+    fidx = searchsortedfirst(cumlength, f)
+    current_block = (get(cumlength, fidx-1,0)+1):cumlength[fidx]
+    start_at = at
+    end_at = at
+    for i=(at+1):length(idxs)
+        if idxs[i] in current_block
+            end_at += 1
+            at += 1
+        else
+            break
+        end
+    end
+    push!(acc, fidx=>idxs[start_at:end_at])
+    group_indices(cumlength, idxs, at+1, acc)
+end
+
+function group_indices(cumlength, idx::Int)
+    group_indices(cumlength, [idx])
+end
+
+function group_indices(cumlength, idxs::AbstractRange)
+    f = searchsortedfirst(cumlength, first(idxs))
+    l = searchsortedfirst(cumlength, last(idxs))
+    out = cumlength[f:l]
+    isempty(out) && return []
+    out[end] = last(idxs)
+    map(=>, f:l, map(UnitRange, vcat(first(idxs), out[1:end-1].+1), out))
+end
+
+struct Blocks{N}
+    blocksize::NTuple{N, Int}
+end
+Blocks(xs::Int...) = Blocks(xs)
+
+
+function _cumlength(len, step)
+    nice_pieces = div(len, step)
+    extra = rem(len, step)
+    ps = [step for i=1:nice_pieces]
+    cumsum(extra > 0 ? vcat(ps, extra) : ps)
+end
+
+function partition(p::Blocks, dom::ArrayDomain)
+    IndexBlocks(map(first, indexes(dom)),
+        map(_cumlength, map(length, indexes(dom)), p.blocksize))
+end
+
