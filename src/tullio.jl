@@ -31,7 +31,10 @@ allequal(x) = nothing
 allequal(x, y) = :($x == $y)
 allequal(x, y, z, xs...) = :($x == $y && $(allequal(x, z, xs...)))
 
-equal(x,y) = (@assert isequal(x, y); x)
+equal(x,y) = (@assert(x == y, (x,y)); x)
+equal(x::Zero,y) = y
+equal(y, z::Zero) = y
+equal(x::Zero, z::Zero) = z
 
 function combine_domains(leftind, constrs, rightdomains...)
     #allequal(consts)
@@ -56,8 +59,8 @@ function _dtullio(dd)
 
     ## Subdomains
     dT = Union{Zero, ArrayDomain}
-    comp = Expr(:generator, Zero(), map((x,y)->:($x = $y), dd.leftind, output_dims)...)
-    domain_comprehension = Expr(:typed_comprehension, dT, comp)
+    comp = :(Array{$dT}(undef, map(length, ($(output_dims...),))))
+    domain_comprehension = :(fill!($comp, $Zero()))
 
     subinds = map(d -> :($d = $d.subindices), dd.arrays)
 
@@ -71,9 +74,9 @@ function _dtullio(dd)
     subdomain_texpr = :($(dd.leftarray)[$(dd.leftind...)] = $(dright))
 
     ## Chunks
-    comp = Expr(:generator, :($ReduceThunks(identity, [])),
-                map((x,y)->:($x = $y), dd.leftind, output_dims)...)
-    chunk_comprehension = Expr(:typed_comprehension, Union{Thunk, Chunk, ReduceThunks}, comp)
+    cT = Union{Thunk, Chunk, ReduceThunks}
+    comp = :(Array{$cT}(undef, map(length, ($(output_dims...),))))
+    chunk_comprehension = :(fill!($comp, $ReduceThunks(identity, [])))
 
     chunks = map(d -> :($d = $d.chunks), dd.arrays)
 
@@ -96,15 +99,16 @@ function _dtullio(dd)
             # within this let block the array symbols refer to the subinds
             subinds = let $(subinds...), $(dd.leftarray) = $domain_comprehension
                 make_left_subdomain($(dd.arrays...)) = ArrayDomain($(output_dims...))
-                DaggerArrays.Tullio.@tullio $subdomain_texpr threads=false
+                equal = $equal
+                DaggerArrays.Tullio.@tullio (equal) $subdomain_texpr threads=false grad=false
                 $(dd.leftarray)
             end
 
             # within this let block the array symbols refer to the array of chunks
             chunks = let $(chunks...), $(dd.leftarray) = $chunk_comprehension
-                on_each = delayed(($(dd.arrays...),) -> DaggerArrays.Tullio.@tullio $on_chunk_texpr)
+                on_each = delayed(($(dd.arrays...),) -> DaggerArrays.Tullio.@tullio $on_chunk_texpr grad=false)
                 delayed_redfun = $delayed_redfun
-                DaggerArrays.Tullio.@tullio (delayed_redfun) $chunks_texpr threads=false
+                DaggerArrays.Tullio.@tullio (delayed_redfun) $chunks_texpr threads=false grad=false
                 $unwrap_reduce.($(dd.leftarray))
             end
 

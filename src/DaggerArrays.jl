@@ -10,8 +10,6 @@ using Tullio
 
 export delayed
 
-export @dtullio
-
 include("util.jl")
 
 export Blocks, ArrayDomain
@@ -21,6 +19,7 @@ import Base.collect
 export DArray, distribute
 include("darray.jl")
 
+export @dtullio
 include("tullio.jl")
 
 include("arraylib.jl")
