@@ -93,7 +93,7 @@ function _dtullio(dd)
     chunks_texpr = :($(dd.leftarray)[$(dd.leftind...)] = $(cright))
 
     quote
-        let
+        $(dd.leftarray) = let
             $(checks...)
 
             # within this let block the array symbols refer to the subinds
