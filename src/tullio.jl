@@ -50,7 +50,7 @@ bcast(f, x, y) = map(f, x, y)
 
 bcast_f(f) = (x...) -> bcast(f, x...)
 
-function _dtullio(dd)
+function __dtullio(dd)
     output_dims = first.(getindex.((dd.constraints,), dd.leftind))
 
     checks = filter(!isnothing, map(x->allequal(x...), values(dd.constraints)))
@@ -122,8 +122,11 @@ function _dtullio(dd)
     end
 end
 
+function _dtullio(expr...)
+    dd = Tullio._tullio(expr..., :(lowered=true))
+    __dtullio(dd)
+end
 
 macro dtullio(expr...)
-    dd = Tullio._tullio(expr..., :(lowered=true))
-    _dtullio(dd) |> esc
+    _dtullio(expr...) |> esc
 end

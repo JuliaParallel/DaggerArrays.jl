@@ -1,12 +1,15 @@
 # map
-
 using GeneralizedGenerated
 
 function idxs(sym, T)
     ((Symbol(sym, i) for i=1:ndims(T))...,)
 end
 
-@generated function Base.map(f, X::DArray)
+function Base.map(f, X::DArray)
+    _map(f, X)
+end
+
+@gg function _map(f, X)
     i = idxs(:i, X)
-    @eval @dtullio Z[$(i...)] := f(X[$(i...)])
+    _dtullio(:(Z[$(i...)] := f(X[$(i...)])))
 end
