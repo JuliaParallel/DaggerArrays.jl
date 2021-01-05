@@ -1,7 +1,5 @@
 # map
 
-using GeneralizedGenerated
-
 function idxs(sym, T)
     ((Symbol(sym, i) for i=1:ndims(T))...,)
 end
