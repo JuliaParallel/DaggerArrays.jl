@@ -88,27 +88,40 @@ function _dtullio(dd)
 
     cright = isequal(cright, dd.right) ? :(on_each($(dd.right))) : cright
 
-    delayed_redfun = :((x, y)->$ReduceThunks($bcast_f($(dd.redfun)), vcat(x.ts, y)))
+    delayed_redfun = @RuntimeGeneratedFunction(:(function (x, y)
+                           $ReduceThunks($bcast_f($(dd.redfun)), vcat(x.ts, y))
+                       end))
 
     chunks_texpr = :($(dd.leftarray)[$(dd.leftind...)] = $(cright))
 
+    do_reduce = !isempty(dd.redind)
+    make_texpr(redf, ex) = do_reduce ?
+    :(DaggerArrays.Tullio.@tullio ($redf) $ex threads=false grad=false) :
+    :(DaggerArrays.Tullio.@tullio $ex threads=false grad=false)
+
+    make_left_subdomain = @RuntimeGeneratedFunction(:(function ($(dd.arrays...),)
+                                                        ArrayDomain($(output_dims...))
+                                                    end))
+    on_each_f = @RuntimeGeneratedFunction(:(function ($(dd.arrays...),)
+                                                DaggerArrays.Tullio.@tullio $on_chunk_texpr grad=false
+                                            end))
     quote
         $(dd.leftarray) = let
             $(checks...)
 
             # within this let block the array symbols refer to the subinds
             subinds = let $(subinds...), $(dd.leftarray) = $domain_comprehension
-                make_left_subdomain($(dd.arrays...)) = ArrayDomain($(output_dims...))
+                make_left_subdomain = $make_left_subdomain
                 equal = $equal
-                DaggerArrays.Tullio.@tullio (equal) $subdomain_texpr threads=false grad=false
+                $(make_texpr(:equal, subdomain_texpr))
                 $(dd.leftarray)
             end
 
             # within this let block the array symbols refer to the array of chunks
             chunks = let $(chunks...), $(dd.leftarray) = $chunk_comprehension
-                on_each = delayed(($(dd.arrays...),) -> DaggerArrays.Tullio.@tullio $on_chunk_texpr grad=false)
+                on_each = delayed($on_each_f)
                 delayed_redfun = $delayed_redfun
-                DaggerArrays.Tullio.@tullio (delayed_redfun) $chunks_texpr threads=false grad=false
+                $(make_texpr(:delayed_redfun, chunks_texpr))
                 $unwrap_reduce.($(dd.leftarray))
             end
 

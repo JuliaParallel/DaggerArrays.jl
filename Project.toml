@@ -5,7 +5,5 @@ version = "0.1.0"
 
 [deps]
 Dagger = "d58978e5-989f-55fb-8d15-ea34adc7bf54"
-KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
-TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
+RuntimeGeneratedFunctions = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
 Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
